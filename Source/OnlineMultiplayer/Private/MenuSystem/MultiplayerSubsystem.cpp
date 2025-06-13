@@ -146,7 +146,7 @@ void UMultiplayerSubsystem::OnCreateSessionComplete(FName SessionName, bool bWas
 		if (World)
 		{
 			// Server travels to the game map. ?listen makes it a listen server.
-			World->ServerTravel(TEXT("/Game/FirstPerson/Maps/FirstPersonExampleMap?listen"));
+			World->ServerTravel(TEXT("/Game/FirstPerson/LvL_FirstPerson?listen"));
 		}
 	}
 
