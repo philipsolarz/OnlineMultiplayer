@@ -17,8 +17,10 @@ public class OnlineMultiplayer : ModuleRules
 			"AIModule",
 			"StateTreeModule",
 			"GameplayStateTreeModule",
-			"UMG"
-		});
+			"UMG",
+            "OnlineSubsystem",
+            "OnlineSubsystemSteam"
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
