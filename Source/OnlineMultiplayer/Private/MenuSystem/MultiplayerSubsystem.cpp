@@ -5,6 +5,7 @@
 #include "OnlineSessionSettings.h"
 #include "Online/OnlineSessionNames.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/GameModeBase.h"
 
 // Define the custom log category
 DEFINE_LOG_CATEGORY(LogMultiplayerMenu);
@@ -17,6 +18,18 @@ UMultiplayerSubsystem::UMultiplayerSubsystem() :
 	StartSessionCompleteDelegate(FOnStartSessionCompleteDelegate::CreateUObject(this, &ThisClass::OnStartSessionComplete))
 {
 	UE_LOG(LogMultiplayerMenu, Log, TEXT("MultiplayerSubsystem Constructor Called."));
+}
+
+void UMultiplayerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+
+	// If this is a dedicated server, create a session right away.
+	if (GetGameInstance()->IsDedicatedServerInstance())
+	{
+		UE_LOG(LogMultiplayerMenu, Log, TEXT("Dedicated server detected. Creating a session."));
+		CreateSession(16, TEXT("Dedicated Server"));
+	}
 }
 
 void UMultiplayerSubsystem::CreateSession(int32 NumPublicConnections, FString MatchType)
@@ -39,7 +52,7 @@ void UMultiplayerSubsystem::CreateSession(int32 NumPublicConnections, FString Ma
 		LastMatchType = MatchType;
 
 		DestroySession();
-		return; // DestroySession will trigger OnDestroySessionComplete, which will re-trigger CreateSession
+		return;
 	}
 
 	CreateSessionCompleteDelegateHandle = SessionInterface->AddOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegate);
@@ -48,16 +61,34 @@ void UMultiplayerSubsystem::CreateSession(int32 NumPublicConnections, FString Ma
 	LastSessionSettings->bIsLANMatch = IOnlineSubsystem::Get()->GetSubsystemName() == "NULL" ? true : false;
 	LastSessionSettings->NumPublicConnections = NumPublicConnections;
 	LastSessionSettings->bAllowJoinInProgress = true;
-	LastSessionSettings->bAllowJoinViaPresence = true;
+	LastSessionSettings->bAllowJoinViaPresence = false;
 	LastSessionSettings->bShouldAdvertise = true;
-	LastSessionSettings->bUsesPresence = true;
-	// We use Lobbies for matchmaking with the Steam game server browser
-	LastSessionSettings->bUseLobbiesIfAvailable = true;
+	LastSessionSettings->bUsesPresence = false;
+	LastSessionSettings->bUseLobbiesIfAvailable = false;
 	LastSessionSettings->Set(FName("MatchType"), MatchType, EOnlineDataAdvertisementType::ViaOnlineServiceAndPing);
 	LastSessionSettings->BuildUniqueId = 1;
 
-	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
-	if (!SessionInterface->CreateSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, *LastSessionSettings))
+	bool bCallSuccess = false;
+
+	// Check if we are a dedicated server or a client acting as a listen server
+	if (GetGameInstance()->IsDedicatedServerInstance())
+	{
+		// For dedicated servers, we use the overload that takes a player number (which is ignored)
+		UE_LOG(LogMultiplayerMenu, Log, TEXT("Creating session for a Dedicated Server."));
+		bCallSuccess = SessionInterface->CreateSession(0, NAME_GameSession, *LastSessionSettings);
+	}
+	else
+	{
+		// For listen servers, we must provide the UniqueNetId of the hosting player
+		const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
+		if (LocalPlayer)
+		{
+			UE_LOG(LogMultiplayerMenu, Log, TEXT("Creating session for a Listen Server."));
+			bCallSuccess = SessionInterface->CreateSession(*LocalPlayer->GetPreferredUniqueNetId(), NAME_GameSession, *LastSessionSettings);
+		}
+	}
+
+	if (!bCallSuccess)
 	{
 		UE_LOG(LogMultiplayerMenu, Error, TEXT("CreateSession: Call to SessionInterface->CreateSession failed."));
 		SessionInterface->ClearOnCreateSessionCompleteDelegate_Handle(CreateSessionCompleteDelegateHandle);
@@ -85,7 +116,7 @@ void UMultiplayerSubsystem::FindSessions(int32 MaxSearchResults)
 	LastSessionSearch = MakeShareable(new FOnlineSessionSearch());
 	LastSessionSearch->MaxSearchResults = MaxSearchResults;
 	LastSessionSearch->bIsLanQuery = IOnlineSubsystem::Get()->GetSubsystemName() == "NULL" ? true : false;
-	LastSessionSearch->QuerySettings.Set(SEARCH_PRESENCE, true, EOnlineComparisonOp::Equals);
+	LastSessionSearch->QuerySettings.Set(SEARCH_PRESENCE, false, EOnlineComparisonOp::Equals);
 
 	const ULocalPlayer* LocalPlayer = GetWorld()->GetFirstLocalPlayerFromController();
 	if (!SessionInterface->FindSessions(*LocalPlayer->GetPreferredUniqueNetId(), LastSessionSearch.ToSharedRef()))
@@ -183,11 +214,14 @@ void UMultiplayerSubsystem::OnCreateSessionComplete(FName SessionName, bool bWas
 
 	if (bWasSuccessful)
 	{
-		UWorld* World = GetWorld();
-		if (World)
+		if (!GetGameInstance()->IsDedicatedServerInstance())
 		{
-			UE_LOG(LogMultiplayerMenu, Log, TEXT("OnCreateSessionComplete: Server traveling to /Game/FirstPerson/LvL_FirstPerson?listen"));
-			World->ServerTravel(TEXT("/Game/FirstPerson/LvL_FirstPerson?listen"));
+			UWorld* World = GetWorld();
+			if (World)
+			{
+				UE_LOG(LogMultiplayerMenu, Log, TEXT("OnCreateSessionComplete: Server traveling to /Game/FirstPerson/LvL_FirstPerson?listen"));
+				World->ServerTravel(TEXT("/Game/FirstPerson/LvL_FirstPerson?listen"));
+			}
 		}
 	}
 

@@ -53,6 +53,7 @@ public:
 	FMultiplayerOnStartSessionComplete MultiplayerOnStartSessionComplete;
 
 protected:
+	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 
 	//
 	// Internal callbacks for the delegates we'll add to the Online Session Interface delegate list.
