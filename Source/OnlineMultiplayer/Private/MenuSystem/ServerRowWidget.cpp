@@ -2,6 +2,7 @@
 
 #include "MenuSystem/ServerRowWidget.h"
 #include "MenuSystem/MainMenuWidget.h"
+#include "MenuSystem/MultiplayerSubsystem.h" // For LogMultiplayerMenu
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "OnlineSubsystem.h"
@@ -24,6 +25,8 @@ void UServerRowWidget::Setup(UMainMenuWidget* InParent, const FOnlineSessionSear
 
     // Set ping
     PingText->SetText(FText::FromString(FString::FromInt(SearchResult.PingInMs) + "ms"));
+
+    UE_LOG(LogMultiplayerMenu, Log, TEXT("ServerRowWidget: Setup for server '%s' with %d/%d players and %dms ping."), *MatchType, CurrentPlayers, MaxPlayers, SearchResult.PingInMs);
 }
 
 void UServerRowWidget::NativeConstruct()
@@ -37,6 +40,7 @@ void UServerRowWidget::NativeConstruct()
 
 void UServerRowWidget::OnJoinButtonClicked()
 {
+    UE_LOG(LogMultiplayerMenu, Log, TEXT("ServerRowWidget: Join Button Clicked."));
     if (Parent)
     {
         JoinButton->SetIsEnabled(false);

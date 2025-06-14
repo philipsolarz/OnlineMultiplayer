@@ -5,8 +5,13 @@
 #include "CoreMinimal.h"
 #include "Subsystems/GameInstanceSubsystem.h"
 #include "Interfaces/OnlineSessionInterface.h"
+#include "Logging/LogMacros.h"
 
 #include "MultiplayerSubsystem.generated.h"
+
+// Declare a custom log category for the multiplayer menu system
+DECLARE_LOG_CATEGORY_EXTERN(LogMultiplayerMenu, Log, All);
+
 
 //
 // Delcaring our own custom delegates for the Menu class to bind callbacks to
