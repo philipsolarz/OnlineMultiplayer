@@ -4,12 +4,13 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
-#include "Interfaces/OnlineSessionInterface.h"
+#include "OnlineSessionSettings.h"
+#include "StrafeMultiplayer/Public/MultiplayerSessionTypes.h"
 #include "MainMenuWidget.generated.h"
 
 class UButton;
 class UScrollBox;
-class UMultiplayerSubsystem;
+class UStrafeMultiplayerSubsystem;
 class UServerRowWidget;
 
 UCLASS()
@@ -20,15 +21,12 @@ class ONLINEMULTIPLAYER_API UMainMenuWidget : public UUserWidget
 public:
     void Setup();
     void Teardown();
-
-    // Called from ServerRowWidget to initiate joining
     void JoinServer(const FOnlineSessionSearchResult& SessionResult);
 
 protected:
     virtual void NativeConstruct() override;
     virtual void NativeDestruct() override;
 
-    // Widget bindings
     UPROPERTY(meta = (BindWidget))
     UButton* CreateButton;
 
@@ -42,19 +40,23 @@ protected:
     TSubclassOf<UServerRowWidget> ServerRowClass;
 
 private:
-    // Button click handlers
     UFUNCTION()
     void OnCreateButtonClicked();
 
     UFUNCTION()
     void OnRefreshButtonClicked();
 
-    // Delegate handlers for MultiplayerSubsystem
+    // Delegate handlers for the new subsystem
     UFUNCTION()
-    void OnCreateSession(bool bWasSuccessful);
-    void OnFindSessions(const TArray<FOnlineSessionSearchResult>& SessionResults, bool bWasSuccessful);
-    void OnJoinSession(EOnJoinSessionCompleteResult::Type Result);
+    void OnCreateSessionComplete(EMultiplayerSessionResult Result);
+
+    // The member function signatures must match the delegate signatures exactly
+    void OnFindLobbiesComplete(const TArray<FOnlineSessionSearchResult>& SessionResults, EMultiplayerSessionResult Result);
+    void OnFindDedicatedServersComplete(const TArray<FOnlineSessionSearchResult>& SessionResults, EMultiplayerSessionResult Result);
+    void OnJoinSessionComplete(EMultiplayerSessionResult Result, const FString& ConnectString);
 
     UPROPERTY()
-    TObjectPtr<UMultiplayerSubsystem> MultiplayerSubsystem;
+    TObjectPtr<UStrafeMultiplayerSubsystem> MultiplayerSubsystem;
+
+    int32 FindSessionsRequestCount = 0;
 };

@@ -3,12 +3,12 @@
 #include "MenuSystem/MainMenuWidget.h"
 #include "Components/Button.h"
 #include "Components/ScrollBox.h"
-#include "MenuSystem/MultiplayerSubsystem.h"
+#include "StrafeMultiplayer/Public/StrafeMultiplayerSubsystem.h"
 #include "MenuSystem/ServerRowWidget.h"
+#include "Kismet/GameplayStatics.h"
 
 void UMainMenuWidget::Setup()
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: Setup called. Adding to viewport and setting input mode."));
     this->AddToViewport();
     this->SetVisibility(ESlateVisibility::Visible);
 
@@ -25,9 +25,7 @@ void UMainMenuWidget::Setup()
 
 void UMainMenuWidget::Teardown()
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: Teardown called. Removing from parent and setting input mode."));
     this->RemoveFromParent();
-
     APlayerController* PlayerController = GetWorld()->GetFirstPlayerController();
     if (PlayerController)
     {
@@ -39,7 +37,6 @@ void UMainMenuWidget::Teardown()
 
 void UMainMenuWidget::JoinServer(const FOnlineSessionSearchResult& SessionResult)
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: JoinServer called."));
     if (MultiplayerSubsystem)
     {
         MultiplayerSubsystem->JoinSession(SessionResult);
@@ -49,7 +46,6 @@ void UMainMenuWidget::JoinServer(const FOnlineSessionSearchResult& SessionResult
 void UMainMenuWidget::NativeConstruct()
 {
     Super::NativeConstruct();
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: NativeConstruct called."));
 
     if (CreateButton) CreateButton->OnClicked.AddDynamic(this, &UMainMenuWidget::OnCreateButtonClicked);
     if (RefreshButton) RefreshButton->OnClicked.AddDynamic(this, &UMainMenuWidget::OnRefreshButtonClicked);
@@ -57,98 +53,129 @@ void UMainMenuWidget::NativeConstruct()
     UGameInstance* GameInstance = GetGameInstance();
     if (GameInstance)
     {
-        MultiplayerSubsystem = GameInstance->GetSubsystem<UMultiplayerSubsystem>();
+        MultiplayerSubsystem = GameInstance->GetSubsystem<UStrafeMultiplayerSubsystem>();
         if (MultiplayerSubsystem)
         {
-            UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: Binding to MultiplayerSubsystem delegates."));
-            MultiplayerSubsystem->MultiplayerOnCreateSessionComplete.AddDynamic(this, &UMainMenuWidget::OnCreateSession);
-            MultiplayerSubsystem->MultiplayerOnFindSessionsComplete.AddUObject(this, &UMainMenuWidget::OnFindSessions);
-            MultiplayerSubsystem->MultiplayerOnJoinSessionComplete.AddUObject(this, &UMainMenuWidget::OnJoinSession);
+            MultiplayerSubsystem->OnCreateSessionComplete.AddDynamic(this, &UMainMenuWidget::OnCreateSessionComplete);
+            MultiplayerSubsystem->OnFindLobbiesComplete.AddUObject(this, &UMainMenuWidget::OnFindLobbiesComplete);
+            MultiplayerSubsystem->OnFindDedicatedServersComplete.AddUObject(this, &UMainMenuWidget::OnFindDedicatedServersComplete);
+            MultiplayerSubsystem->OnJoinSessionComplete.AddUObject(this, &UMainMenuWidget::OnJoinSessionComplete);
         }
     }
 }
 
 void UMainMenuWidget::NativeDestruct()
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: NativeDestruct called."));
-    if (MultiplayerSubsystem)
-    {
-        UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: Removing all delegate bindings from MultiplayerSubsystem."));
-        MultiplayerSubsystem->MultiplayerOnCreateSessionComplete.RemoveAll(this);
-        MultiplayerSubsystem->MultiplayerOnFindSessionsComplete.RemoveAll(this);
-        MultiplayerSubsystem->MultiplayerOnJoinSessionComplete.RemoveAll(this);
-    }
+    // UObject delegates are auto-unbound on destruction
     Super::NativeDestruct();
 }
 
 void UMainMenuWidget::OnCreateButtonClicked()
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: Create Button Clicked."));
     if (MultiplayerSubsystem)
     {
         CreateButton->SetIsEnabled(false);
         RefreshButton->SetIsEnabled(false);
-        MultiplayerSubsystem->CreateSession(4, TEXT("PublicMatch"));
+
+        FStrafeGameSessionSettings SessionSettings;
+        SessionSettings.MaxPlayers = 8;
+        SessionSettings.GameMode = TEXT("Arena");
+        SessionSettings.MapName = TEXT("DM-Deck");
+        SessionSettings.GameModeSettings = TEXT("TimeLimit=10,FragLimit=25");
+        SessionSettings.bIsDedicated = false;
+
+        MultiplayerSubsystem->CreateSession(SessionSettings);
     }
 }
 
 void UMainMenuWidget::OnRefreshButtonClicked()
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: Refresh Button Clicked."));
     if (MultiplayerSubsystem)
     {
         RefreshButton->SetIsEnabled(false);
         ServerListScrollBox->ClearChildren();
-        MultiplayerSubsystem->FindSessions(10000);
+
+        FindSessionsRequestCount = 2;
+        MultiplayerSubsystem->FindLobbies();
+        MultiplayerSubsystem->FindDedicatedServers();
     }
 }
 
-void UMainMenuWidget::OnCreateSession(bool bWasSuccessful)
+void UMainMenuWidget::OnCreateSessionComplete(EMultiplayerSessionResult Result)
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: OnCreateSession callback received. bWasSuccessful: %d"), bWasSuccessful);
-    // The subsystem now handles server travel on success.
-    // We only need to handle failure here.
-    if (!bWasSuccessful)
+    if (Result == EMultiplayerSessionResult::Success)
     {
-        UE_LOG(LogMultiplayerMenu, Warning, TEXT("MainMenuWidget: Session creation failed. Re-enabling buttons."));
+        UWorld* World = GetWorld();
+        if (World)
+        {
+            // API FIX: Removed the unused LastSettings variable.
+            // In a real game, you would get the map from the settings used to create the session.
+            World->ServerTravel(TEXT("/Game/FirstPerson/LvL_FirstPerson?listen"));
+        }
+    }
+    else
+    {
         CreateButton->SetIsEnabled(true);
         RefreshButton->SetIsEnabled(true);
     }
 }
 
-void UMainMenuWidget::OnFindSessions(const TArray<FOnlineSessionSearchResult>& SessionResults, bool bWasSuccessful)
+void UMainMenuWidget::OnFindLobbiesComplete(const TArray<FOnlineSessionSearchResult>& SessionResults, EMultiplayerSessionResult Result)
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: OnFindSessions callback received. bWasSuccessful: %d, Num Results: %d"), bWasSuccessful, SessionResults.Num());
-    if (!bWasSuccessful || !ServerRowClass)
+    FindSessionsRequestCount--;
+    if (FindSessionsRequestCount <= 0)
     {
-        UE_LOG(LogMultiplayerMenu, Warning, TEXT("MainMenuWidget: Find sessions failed or ServerRowClass is not set. Re-enabling refresh button."));
         RefreshButton->SetIsEnabled(true);
-        return;
     }
 
-    for (const FOnlineSessionSearchResult& Result : SessionResults)
+    if (Result == EMultiplayerSessionResult::Success)
     {
-        UServerRowWidget* ServerRow = CreateWidget<UServerRowWidget>(this, ServerRowClass);
-        if (ServerRow)
+        for (const FOnlineSessionSearchResult& SearchResult : SessionResults)
         {
-            FString MatchType;
-            Result.Session.SessionSettings.Get(FName("MatchType"), MatchType);
-            UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: Found Session - MatchType: %s, Ping: %dms"), *MatchType, Result.PingInMs);
-            ServerRow->Setup(this, Result);
-            ServerListScrollBox->AddChild(ServerRow);
+            UServerRowWidget* ServerRow = CreateWidget<UServerRowWidget>(this, ServerRowClass);
+            if (ServerRow)
+            {
+                ServerRow->Setup(this, SearchResult);
+                ServerListScrollBox->AddChild(ServerRow);
+            }
         }
     }
-    RefreshButton->SetIsEnabled(true);
 }
 
-void UMainMenuWidget::OnJoinSession(EOnJoinSessionCompleteResult::Type Result)
+void UMainMenuWidget::OnFindDedicatedServersComplete(const TArray<FOnlineSessionSearchResult>& SessionResults, EMultiplayerSessionResult Result)
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("MainMenuWidget: OnJoinSession callback received. Result: %d"), Result);
-    // The subsystem now handles client travel on success.
-    // We only need to handle failure here.
-    if (Result != EOnJoinSessionCompleteResult::Success)
+    FindSessionsRequestCount--;
+    if (FindSessionsRequestCount <= 0)
     {
-        UE_LOG(LogMultiplayerMenu, Warning, TEXT("MainMenuWidget: Join session failed. Re-enabling refresh button."));
+        RefreshButton->SetIsEnabled(true);
+    }
+
+    if (Result == EMultiplayerSessionResult::Success)
+    {
+        for (const FOnlineSessionSearchResult& SearchResult : SessionResults)
+        {
+            UServerRowWidget* ServerRow = CreateWidget<UServerRowWidget>(this, ServerRowClass);
+            if (ServerRow)
+            {
+                ServerRow->Setup(this, SearchResult);
+                ServerListScrollBox->AddChild(ServerRow);
+            }
+        }
+    }
+}
+
+void UMainMenuWidget::OnJoinSessionComplete(EMultiplayerSessionResult Result, const FString& ConnectString)
+{
+    if (Result == EMultiplayerSessionResult::Success)
+    {
+        APlayerController* PlayerController = UGameplayStatics::GetPlayerController(this, 0);
+        if (PlayerController)
+        {
+            PlayerController->ClientTravel(ConnectString, ETravelType::TRAVEL_Absolute);
+        }
+    }
+    else
+    {
         RefreshButton->SetIsEnabled(true);
     }
 }

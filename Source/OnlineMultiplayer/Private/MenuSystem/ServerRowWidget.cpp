@@ -2,31 +2,40 @@
 
 #include "MenuSystem/ServerRowWidget.h"
 #include "MenuSystem/MainMenuWidget.h"
-#include "MenuSystem/MultiplayerSubsystem.h" // For LogMultiplayerMenu
 #include "Components/Button.h"
 #include "Components/TextBlock.h"
 #include "OnlineSubsystem.h"
-
+#include "StrafeMultiplayer/Public/MultiplayerSessionTypes.h"
 
 void UServerRowWidget::Setup(UMainMenuWidget* InParent, const FOnlineSessionSearchResult& InSearchResult)
 {
     Parent = InParent;
     SearchResult = InSearchResult;
 
-    // Set server name from the "MatchType" setting, as defined in your MultiplayerSubsystem
-    FString MatchType;
-    SearchResult.Session.SessionSettings.Get(FName("MatchType"), MatchType);
-    ServerNameText->SetText(FText::FromString(MatchType));
+    FString MapName = "N/A";
+    SearchResult.Session.SessionSettings.Get(SESSION_KEY_MAP_NAME, MapName);
+    FString GameMode = "N/A";
+    SearchResult.Session.SessionSettings.Get(SESSION_KEY_GAME_MODE, GameMode);
 
-    // Set player count
+    // API FIX: Correctly check if the server is dedicated using our custom setting
+    bool bIsDedicatedFlag = false;
+    SearchResult.Session.SessionSettings.Get(SESSION_KEY_IS_DEDICATED, bIsDedicatedFlag);
+
+    if (bIsDedicatedFlag)
+    {
+        ServerNameText->SetText(FText::FromString(FString::Printf(TEXT("DEDI - %s (%s)"), *GameMode, *MapName)));
+    }
+    else
+    {
+        FString HostName = SearchResult.Session.OwningUserName;
+        ServerNameText->SetText(FText::FromString(FString::Printf(TEXT("%s's Game - %s"), *HostName, *GameMode)));
+    }
+
     int32 CurrentPlayers = SearchResult.Session.SessionSettings.NumPublicConnections - SearchResult.Session.NumOpenPublicConnections;
     int32 MaxPlayers = SearchResult.Session.SessionSettings.NumPublicConnections;
     PlayerCountText->SetText(FText::FromString(FString::Printf(TEXT("%d/%d"), CurrentPlayers, MaxPlayers)));
 
-    // Set ping
     PingText->SetText(FText::FromString(FString::FromInt(SearchResult.PingInMs) + "ms"));
-
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("ServerRowWidget: Setup for server '%s' with %d/%d players and %dms ping."), *MatchType, CurrentPlayers, MaxPlayers, SearchResult.PingInMs);
 }
 
 void UServerRowWidget::NativeConstruct()
@@ -40,7 +49,6 @@ void UServerRowWidget::NativeConstruct()
 
 void UServerRowWidget::OnJoinButtonClicked()
 {
-    UE_LOG(LogMultiplayerMenu, Log, TEXT("ServerRowWidget: Join Button Clicked."));
     if (Parent)
     {
         JoinButton->SetIsEnabled(false);
